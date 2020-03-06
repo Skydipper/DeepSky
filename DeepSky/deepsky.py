@@ -10,6 +10,8 @@ import pandas as pd
 import requests
 import getpass
 import argparse
+from dotenv import load_dotenv
+from pathlib import Path
 import tensorflow as tf
 from tensorboard import program
 from IPython.display import IFrame
@@ -38,8 +40,10 @@ class Trainer(object):
         A string specifying the direction of a json keyfile on your local filesystem
         e.g. "/Users/me/.privateKeys/key_with_bucket_permissions.json"
     """
-    def __init__(self, privatekey_path):
-        self.privatekey_path = privatekey_path
+    def __init__(self):
+        self.env_path = Path('.') / '.env'
+        load_dotenv(dotenv_path= self.env_path)
+        self.privatekey_path = os.getenv("PRIVATEKEY_PATH")
         self.storage_client = storage.Client.from_service_account_json(self.privatekey_path)
         self.db_url = 'postgresql://postgres:postgres@0.0.0.0:5432/geomodels'
         self.engine = sqlalchemy.create_engine(self.db_url)
