@@ -1,0 +1,7 @@
+SLUG=DeepSky
+NAME=DeepSky
+VERSION=0.0.1
+AUTHOR="vizzuality"
+AUTHOR_EMAIL="info@vizzuality.com"
+DESCRIPTION="ML lib"
+URL="https://github.com/Skydipper/DeepSky"
