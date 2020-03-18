@@ -23,6 +23,7 @@ from google.cloud import storage
 from google.cloud.storage import blob
 from googleapiclient import discovery
 from googleapiclient import errors
+from google.oauth2 import service_account
 from oauth2client.client import GoogleCredentials
 from tensorflow.python.tools import saved_model_utils
 
@@ -41,11 +42,13 @@ class Trainer(object):
         e.g. "/Users/me/.privateKeys/key_with_bucket_permissions.json"
     """
     def __init__(self):
-        self.env_path = Path('.') / '.env'
+        self.env_path = Path('..') / '.env'
         load_dotenv(dotenv_path= self.env_path)
         self.privatekey_path = os.getenv("PRIVATEKEY_PATH")
-        self.storage_client = storage.Client.from_service_account_json(self.privatekey_path)
-        self.db_url = 'postgresql://postgres:postgres@0.0.0.0:5432/geomodels'
+        self.private_key = json.loads(os.getenv("PRIVATE_KEY"))
+        self.credentials = service_account.Credentials(self.private_key, self.private_key['client_email'], self.private_key['token_uri'])
+        self.storage_client = storage.Client(credentials=self.credentials, project=self.private_key['project_id'])
+        self.db_url = 'postgresql://postgres:postgres@0.0.0.0:5432/geopredictor'
         self.engine = sqlalchemy.create_engine(self.db_url)
         self.slugs_list = ["Sentinel-2-Top-of-Atmosphere-Reflectance",
               "Landsat-7-Surface-Reflectance",
