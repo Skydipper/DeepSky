@@ -28,10 +28,5 @@ COPY . /tf/deepsky
 RUN pip install -e /tf/deepsky
 RUN pip install -r /tf/deepsky/requirements.txt
 COPY jupyter_notebook_config.py /etc/jupyter/
-#Switch back to jovyan to avoid accidental container runs as root
-#RUN useradd -m -s /bin/bash -N -u $NB_UID $NB_USER
-#USER $NB_USER
-# Configure container startup
 EXPOSE 8888
-#ENTRYPOINT ["tini", "-g", "--"]
-#CMD ["jupyter", "notebook"]
+
