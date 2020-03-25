@@ -4,6 +4,7 @@ import sqlalchemy
 import folium
 import json
 import os
+import logging
 import time
 import shutil
 import pandas as pd
@@ -31,7 +32,7 @@ from . import ee_collection_specifics
 
 from .utils import datasets, UploadExperiment, df_from_query, df_to_db, df_to_csv, polygons_to_geoStoreMultiPoligon, get_geojson_string,\
     min_max_values, normalize_ee_images, get_image_ids, GeoJSONs_to_FeatureCollections, check_status_data,\
-    removekey
+    removekey, Database
 
 class Trainer(object):
     """
@@ -42,38 +43,35 @@ class Trainer(object):
         e.g. "/Users/me/.privateKeys/key_with_bucket_permissions.json"
     """
     def __init__(self):
-        self.env_path = Path('..') / '.env'
-        load_dotenv(dotenv_path= self.env_path)
-        self.privatekey_path = os.getenv("PRIVATEKEY_PATH")
-        self.private_key = json.loads(os.getenv("PRIVATE_KEY"))
+        #import env files & services auth
+        self.ee_tiles = 'https://earthengine.googleapis.com/map/{mapid}/{{z}}/{{x}}/{{y}}?token={token}'
+        self.private_key = json.loads(os.getenv("EE_PRIVATE_KEY"))
+        logging.info(f'[Trainer init]:{os.getenv("EE_PRIVATE_KEY")}')
         self.credentials = service_account.Credentials(self.private_key, self.private_key['client_email'], self.private_key['token_uri'])
+        self.ee_credentials = ee.ServiceAccountCredentials(email='', key_data=os.getenv("EE_PRIVATE_KEY"))
+        self.ml = discovery.build('ml', 'v1', credentials = self.credentials)
         self.storage_client = storage.Client(credentials=self.credentials, project=self.private_key['project_id'])
-        self.db_url = 'postgresql://postgres:postgres@0.0.0.0:5432/geopredictor'
-        self.engine = sqlalchemy.create_engine(self.db_url)
-        self.slugs_list = ["Sentinel-2-Top-of-Atmosphere-Reflectance",
-              "Landsat-7-Surface-Reflectance",
-              "Landsat-8-Surface-Reflectance",
-              "USDA-NASS-Cropland-Data-Layers",
-              "USGS-National-Land-Cover-Database",
-              "Lake-Water-Quality-100m"]
-        self.table_names = self.engine.table_names()
-        #self.datasets_api = Skydipper.Collection(search=' '.join(self.slugs_list), object_type=['dataset'], app=['skydipper'], limit=len(self.slugs_list))
-        self.ee_tiles = 'https://earthengine.googleapis.com/map/{mapid}/{{z}}/{{x}}/{{y}}?token={token}' 
-        self.datasets = df_from_query(self.engine, 'dataset') 
-        self.images = df_from_query(self.engine, 'image')  
-        self.models = df_from_query(self.engine, 'model') 
-        self.versions = df_from_query(self.engine, 'model_versions') 
-        self.bucket = 'geo-ai'
-        self.project_id = 'skydipper-196010'
+        self.bucket = os.getenv("GCSBUCKET")
+        
+        self.db = Database()
+        self.table_names = self.db.engine.table_names()
+        self.datasets = df_from_query(self.db.engine, 'dataset') 
+        self.images = df_from_query(self.db.engine, 'image')  
+        self.models = df_from_query(self.db.engine, 'model') 
+        self.versions = df_from_query(self.db.engine, 'model_versions') 
         self.colors = ['#02AEED', '#7020FF', '#F84B5A', '#FFAA36']
         self.style_functions = [lambda x: {'fillOpacity': 0.0, 'weight': 4, 'color': color} for color in self.colors]
-        # Get a Python representation of the AI Platform Training services
-        self.credentials = GoogleCredentials.from_stream(self.privatekey_path)
-        self.ml = discovery.build('ml', 'v1', credentials = self.credentials)
-        ee.Initialize()
+
+        
+        ee.Initialize(credentials=self.ee_credentials, use_cloud_api=False)
 
         # TODO
         #self.datasets_api = Skydipper.Collection(search=' '.join(self.slugs_list), object_type=['dataset'], app=['skydipper'], limit=len(self.slugs_list))
+    @property
+    def slugs_list(self):
+        conn = Database()
+        return [row['slug'] for row in conn.Query('select slug from dataset')]
+
 
     def get_token(self, email):
         password = getpass.getpass('Skydipper login password:')
@@ -83,7 +81,7 @@ class Trainer(object):
             "password": f"{password}"
         }
 
-        url = f'https://api.skydipper.com/auth/login'
+        url = f'{os.getenv("API_URL")}/auth/login'
 
         headers = {'Content-Type': 'application/json'}
 
@@ -175,7 +173,7 @@ class Trainer(object):
                 'Authorization': 'Bearer ' + self.token,
                 'Content-Type':'application/json'
                     }
-            url = 'https://api.skydipper.com/v1/geostore'
+            url = f'{os.getenv("API_URL")}/v1/geostore'
             r = requests.post(url, headers=header, json=self.geostore)
 
             self.multipolygon = r.json().get('data').get('attributes')
@@ -580,6 +578,70 @@ class Trainer(object):
             df_to_csv(self.versions, "model_versions")
             df_to_db(self.images, self.engine, "image")
             df_to_db(self.versions, self.engine, "model_versions")
+    
+    def export_TFRecords_Dag(self, **kwargs):
+        """
+        Export TFRecords to GCS.
+        Parameters
+        ----------
+        sample_size: int
+            Number of samples to extract from each polygon.
+        kernel_size: int
+            An integer specifying the height and width of the 2D images.
+        """
+        self.sample_size = sample_size
+        self.kernel_size = kernel_size
+        # Get image ids
+        self.image_ids = get_image_ids(self.images, self.datasets, self.slugs,\
+                                       self.bands, self.scale, self.init_date, self.end_date, self.norm_type)
+        # Convert the GeoJSON to feature collections
+        feature_collections = GeoJSONs_to_FeatureCollections(self.geostore)
+        
+        # Convert the feature collections to lists for iteration.
+        feature_lists = list(map(lambda x: x.toList(x.size()), feature_collections))
+
+        # Stack the 2D images to create a single image from which samples can be taken
+        self.stack_images(feature_collections)
+
+        df = self.versions[['input_image_id', 'output_image_id', 'geostore_id', 'kernel_size', 'sample_size']\
+                          ].isin([self.image_ids[0], self.image_ids[1], self.geostore_id, self.kernel_size, self.sample_size]).copy()
+        if not df.all(axis=1).any():
+            task = self.start_TFRecords_task(feature_collections, feature_lists)
+        elif not (self.versions[df.all(axis=1)]['data_status'] == 'COMPLETED').all():
+            task = self.start_TFRecords_task(feature_collections, feature_lists)
+
+        # Populate model_versions tables
+        if (self.versions.empty) or not df.all(axis=1).any():
+            dictionary = dict(zip(list(self.versions.keys()), [[-9999], [''], [self.image_ids[0]], [self.image_ids[1]], [self.geostore_id], [self.kernel_size], [self.sample_size], [json.dumps({})], [-9999], [''], [''], [False], [False]]))
+            self.versions = self.versions.append(pd.DataFrame(dictionary), ignore_index = True, sort=False)
+
+        # Save task status
+        df = self.versions[['input_image_id', 'output_image_id', 'geostore_id', 'kernel_size', 'sample_size']\
+                          ].isin([self.image_ids[0], self.image_ids[1], self.geostore_id, self.kernel_size, self.sample_size]).copy()
+        if (df.empty) or not (self.versions[df.all(axis=1)]['data_status'] == 'COMPLETED').all():
+            print('Exporting TFRecords to GCS:')
+            status_list = check_status_data(task, self.file_paths)
+            index = self.versions.index[-1]
+            while not status_list == ['COMPLETED'] * len(self.file_paths):
+                status_list = check_status_data(task, self.file_paths)
+
+                #Save temporal status in table
+                tmp_status = json.dumps(dict(zip(self.file_paths, status_list)))
+                self.versions.at[index, 'data_status'] = tmp_status
+                print('Temporal status: ', tmp_status)
+
+                time.sleep(60)
+
+            # Save final status in table
+            self.versions.at[index, 'data_status'] = "COMPLETED"  
+            print('Final status: COMPLETED')
+            
+            # TODO
+            # Save image and model_versions tables
+            df_to_csv(self.images, "image")
+            df_to_csv(self.versions, "model_versions")
+            df_to_db(self.images, self.engine, "image")
+            df_to_db(self.versions, self.engine, "model_versions")
 
     def check_trainig_status(self, ml, project, job_name):
         # Monitoring the training job
@@ -846,7 +908,7 @@ class Trainer(object):
 
         print('Creating training job: ' + job_name)
         # Save your project ID in the format the APIs need
-        project = 'projects/{}'.format(self.project_id)
+        project = 'projects/{}'.format(self.private_key['project_id'])
 
         # Create a request to call projects.jobs.create.
         request = self.ml.projects().jobs().create(body=job_spec,
@@ -1002,7 +1064,7 @@ class Trainer(object):
         
         # Get deployed model list
         # Create a request to call projects().models().list.
-        project = 'projects/{}'.format(self.project_id)
+        project = 'projects/{}'.format(self.private_key['project_id'])
         request = self.ml.projects().models().list(parent=project)
 
         # Make the call.
@@ -1016,7 +1078,7 @@ class Trainer(object):
         models_list = list(map(lambda x: x.get('name'), response.get('models')))
 
         # Create model in AI platform
-        if not f'projects/{self.project_id}/models/{self.model_name}' in models_list:
+        if not f"projects/{self.private_key['project_id']}/models/{self.model_name}" in models_list:
             # Create model model in AI platform
             # Create a dictionary with the fields from the request body.
             request_dict = {'name': self.model_name,
@@ -1046,7 +1108,7 @@ class Trainer(object):
 
         # Create a request to call projects.models.versions.create.
         request = self.ml.projects().models().versions().create(
-            parent=f'projects/{self.project_id}/models/{self.model_name}',
+            parent=f"projects/{self.private_key['project_id']}/models/{self.model_name}",
             body=request_dict
         )
 

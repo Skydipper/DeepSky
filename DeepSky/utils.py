@@ -1,10 +1,12 @@
 import numpy as np
 import pandas as pd
-from sqlalchemy import Column, Integer, BigInteger, Float, Text, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, BigInteger, Float, Text, String, Boolean, DateTime, create_engine, MetaData
 from sqlalchemy.dialects.postgresql import JSON
 import json
 import tensorflow as tf
 import ee
+import os
+import logging
 
 from argparse import Namespace
 import grpc
@@ -127,6 +129,56 @@ class UploadExperiment():
         
         return url
 
+
+#database connexion class
+class Database():
+    def __init__(self):
+        self.DBURL=os.getenv('DB_CONNEXION', default = None)
+        self.engine = create_engine(self.DBURL)  
+    @property
+    def metadata(self):
+        meta = MetaData(self.engine)
+        meta.reflect()
+        return meta
+    
+    def Query(self, query):
+        """
+        execute a query
+        """
+        logging.debug(f"{query}")
+        with self.engine.begin() as connection:
+            fetchQuery = connection.execute(f"{query}")
+            output = [{column: value for column, value in rowproxy.items()} for rowproxy in fetchQuery]       
+        return output
+    def insert(self, table, values):
+        """
+        inserts in a table
+        """
+        myTable = self.metadata.tables[table]
+        with self.engine.begin() as connection:
+            id = connection.execute(myTable.insert(), values)     
+        return self.Query(f'select * from {table}')
+
+    def update(self, table, values, id):
+        """
+        updates a row in a table
+        """
+        myTable = self.metadata.tables[table]
+        with self.engine.begin() as connection:
+            connection.execute(myTable.update().where(myTable.c.id==id).values(**values))     
+        return self.Query(f'select * from {table}')
+
+    
+    def delete(self, table, id):
+        """
+        delete row of a table
+        """
+        myTable = self.metadata.tables[table]
+        with self.engine.begin() as connection:
+            connection.execute(myTable.delete().where(myTable.c.id==id))     
+        return self.Query(f'select * from {table}')
+
+
 def df_from_query(engine, table_name):
     """Read DataFrames from query"""
     queries = {
@@ -145,73 +197,15 @@ def df_from_query(engine, table_name):
         print("Table doesn't exist in database!") 
 
 
-def df_to_db(df, engine, table_name):
+def df_to_db(df, db, table_name, id, operation):
     """Save DataFrames into database."""
-    if table_name == "dataset":
-        df.to_sql("dataset",
-                       engine,
-                       if_exists='replace',
-                       schema='public',
-                       index=True,
-                       index_label='id',
-                       chunksize=500,
-                       dtype={"slug": Text,
-                              "name": Text,
-                              "bands": Text,
-                              "bands": Text,
-                              "provider": Text})
-    if table_name == "image":
-        df.to_sql("image",
-                       engine,
-                       if_exists='replace',
-                       schema='public',
-                       index=True,
-                       index_label='id',
-                       chunksize=500,
-                       dtype={"dataset_id ": Integer,
-                              "bands_selections": Text,
-                              "scale": Float,
-                              "init_date": Text,
-                              "end_date": Text,
-                              "bands_min_max": JSON,
-                              "norm_type": Text,
-                              "geostore_id": Text})
-    
-    if table_name == "model":
-        df.to_sql("model",
-                       engine,
-                       if_exists='replace',
-                       schema='public',
-                       index=True,
-                       index_label='id',
-                       chunksize=500,
-                       dtype={"model_name": Text,
-                              "model_type": Text,
-                              "model_output": Text,
-                              "model_description": Text,
-                              "output_image_id": Integer})
-    
-    if table_name == "model_versions":
-        df.to_sql("model_versions",
-                       engine,
-                       if_exists='replace',
-                       schema='public',
-                       index=True,
-                       index_label='id',
-                       chunksize=500,
-                       dtype={"model_id": Integer,
-                              "model_architecture": Text,
-                              "input_image_id": Integer,
-                              "output_image_id": Integer,
-                              "geostore_id": Text,
-                              "kernel_size": BigInteger,
-                              "sample_size": BigInteger,
-                              "training_params": JSON,
-                              "version": BigInteger,
-                              "data_status": Text,
-                              "training_status": Text,
-                              "eeified": Boolean,
-                              "deployed": Boolean})
+    data = df.iloc[id].to_dict()
+    if operation == 'insert':
+        return db.insert(table_name, [data])
+    elif operation == 'update':
+        return db.update(table_name, data, id)
+    else:
+        raise f'operation {operation} not in [insert, update]'
 
 def df_to_csv(df, table_name):
     table_paths = {
@@ -294,7 +288,7 @@ def min_max_values(image, collection, scale, norm_type='global', geostore=None, 
             'maxPixels': 1e10,
             'bestEffort': True,
             'scale':scale,
-            'tileScale': 10
+            'tileScale': 16
             
         }
         
@@ -307,7 +301,7 @@ def min_max_values(image, collection, scale, norm_type='global', geostore=None, 
             'maxPixels': 1e10,
             'bestEffort': True,
             'scale':scale,
-            'tileScale': 10
+            'tileScale': 16
             
         }
         
