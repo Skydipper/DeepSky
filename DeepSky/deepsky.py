@@ -46,7 +46,6 @@ class Trainer(object):
         #import env files & services auth
         self.ee_tiles = 'https://earthengine.googleapis.com/map/{mapid}/{{z}}/{{x}}/{{y}}?token={token}'
         self.private_key = json.loads(os.getenv("EE_PRIVATE_KEY"))
-        logging.info(f'[Trainer init]:{os.getenv("EE_PRIVATE_KEY")}')
         self.credentials = service_account.Credentials(self.private_key, self.private_key['client_email'], self.private_key['token_uri'])
         self.ee_credentials = ee.ServiceAccountCredentials(email='', key_data=os.getenv("EE_PRIVATE_KEY"))
         self.ml = discovery.build('ml', 'v1', credentials = self.credentials)
@@ -1144,16 +1143,12 @@ class Validator(object):
     Validation of Deep Learning models in Skydipper
     """
     def __init__(self):
-        self.db_url = 'postgresql://postgres:postgres@0.0.0.0:5432/geomodels'
-        self.engine = sqlalchemy.create_engine(self.db_url)
-        self.table_names = self.engine.table_names()
-        #self.datasets_api = Skydipper.Collection(search=' '.join(self.slugs_list), object_type=['dataset'], app=['skydipper'], limit=len(self.slugs_list))
-        self.datasets = df_from_query(self.engine, 'dataset') 
-        self.images = df_from_query(self.engine, 'image')  
-        self.models = df_from_query(self.engine, 'model') 
-        self.versions = df_from_query(self.engine, 'model_versions') 
-        self.bucket = 'geo-ai'
-        self.project_id = 'skydipper-196010'
+        self.db = Database()
+        self.table_names = self.db.engine.table_names()
+        self.datasets = df_from_query(self.db.engine, 'dataset') 
+        self.images = df_from_query(self.db.engine, 'image')  
+        self.models = df_from_query(self.db.engine, 'model') 
+        self.versions = df_from_query(self.db.engine, 'model_versions') 
 
     def select_model(self, model_name):
         """
@@ -1233,20 +1228,27 @@ class Predictor(object):
     Prediction of Deep Learning models in Skydipper
     """
     def __init__(self):
-        self.db_url = 'postgresql://postgres:postgres@0.0.0.0:5432/geomodels'
-        self.engine = sqlalchemy.create_engine(self.db_url)
-        self.table_names = self.engine.table_names()
-        #self.datasets_api = Skydipper.Collection(search=' '.join(self.slugs_list), object_type=['dataset'], app=['skydipper'], limit=len(self.slugs_list))
-        self.ee_tiles = 'https://earthengine.googleapis.com/map/{mapid}/{{z}}/{{x}}/{{y}}?token={token}' 
-        self.datasets = df_from_query(self.engine, 'dataset') 
-        self.images = df_from_query(self.engine, 'image')  
-        self.models = df_from_query(self.engine, 'model') 
-        self.versions = df_from_query(self.engine, 'model_versions') 
-        self.bucket = 'geo-ai'
-        self.project_id = 'skydipper-196010'
+        self.ee_tiles = 'https://earthengine.googleapis.com/map/{mapid}/{{z}}/{{x}}/{{y}}?token={token}'
+        self.private_key = json.loads(os.getenv("EE_PRIVATE_KEY"))
+        self.credentials = service_account.Credentials(self.private_key, self.private_key['client_email'], self.private_key['token_uri'])
+        self.ee_credentials = ee.ServiceAccountCredentials(email='', key_data=os.getenv("EE_PRIVATE_KEY"))
+        self.storage_client = storage.Client(credentials=self.credentials, project=self.private_key['project_id'])
+        self.bucket = os.getenv("GCSBUCKET")
+        
+        self.db = Database()
+        self.table_names = self.db.engine.table_names()
+        self.datasets = df_from_query(self.db.engine, 'dataset') 
+        self.images = df_from_query(self.db.engine, 'image')  
+        self.models = df_from_query(self.db.engine, 'model') 
+        self.versions = df_from_query(self.db.engine, 'model_versions') 
         self.colors = ['#02AEED', '#7020FF', '#F84B5A', '#FFAA36']
         self.style_functions = [lambda x: {'fillOpacity': 0.0, 'weight': 4, 'color': color} for color in self.colors]
-        ee.Initialize()
+
+        
+        ee.Initialize(credentials=self.ee_credentials, use_cloud_api=False)
+
+        # TODO
+        #self.datasets_api = Skydipper.Collection(search=' '.join(self.slugs_list), object_type=['dataset'], app=['skydipper'], limit=len(self.slugs_list))
 
     def get_token(self, email):
         password = getpass.getpass('Skydipper login password:')
@@ -1256,7 +1258,7 @@ class Predictor(object):
             "password": f"{password}"
         }
 
-        url = f'https://api.skydipper.com/auth/login'
+        url = f'{os.getenv("API_URL")}/auth/login'
 
         headers = {'Content-Type': 'application/json'}
 
@@ -1325,7 +1327,7 @@ class Predictor(object):
                 'Authorization': 'Bearer ' + self.token,
                 'Content-Type':'application/json'
                     }
-            url = 'https://api.skydipper.com/v1/geostore'
+            url = f'{os.getenv("API_URL")}/v1/geostore'
             r = requests.post(url, headers=header, json=self.attributes)
 
             self.polygon = r.json().get('data').get('attributes')
@@ -1401,7 +1403,7 @@ class Predictor(object):
 
         # Load the trained model and use it for prediction.
         model = ee.Model.fromAiPlatformPredictor(
-            projectName = self.project_id,
+            projectName = self.private_key['project_id'],
             modelName = self.model_name,
             version = self.version_name,
             inputTileSize = input_tile_size,
