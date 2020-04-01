@@ -1294,7 +1294,7 @@ class Predictor(object):
         self.version = version
         self.version_id = self.versions[self.versions['version'] == self.version].index[0]
         self.version_name = 'v'+ str(self.version)
-        self.training_params =json.loads(self.versions[self.versions['version'] == self.version]['training_params'][self.version_id])
+        self.training_params =self.versions[self.versions['version'] == self.version]['training_params'][self.version_id]
         self.image_ids = list(self.versions.iloc[self.version_id][['input_image_id', 'output_image_id']])
         self.collections = list(self.datasets.iloc[list(self.images.iloc[self.image_ids]['dataset_id'])]['slug'])
         self.bands = [self.training_params.get('in_bands'), self.training_params.get('out_bands')]
@@ -1379,12 +1379,12 @@ class Predictor(object):
             self.init_date = init_date
             self.end_date = end_date
         else:
-            self.init_date = self.init_date
-            self.end_date = self.end_date
+            self.init_date = self.init_date.strftime("%Y-%m-%d")
+            self.end_date = self.end_date.strftime("%Y-%m-%d")
 
         self.kernel_size = int(self.versions['kernel_size'].iloc[self.version_id])
         self.input_image_id = self.versions.iloc[self.version_id]['input_image_id']
-        values = json.loads(self.images.iloc[self.input_image_id]['bands_min_max'])
+        values = self.images.iloc[self.input_image_id]['bands_min_max']
         # Create input composite
         self.image = ee_collection_specifics.Composite(self.collections[0])(self.init_date, self.end_date)
         # Normalize images
