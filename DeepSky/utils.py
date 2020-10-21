@@ -133,7 +133,7 @@ class UploadExperiment():
 #database connexion class
 class Database():
     def __init__(self):
-        self.DBURL=os.getenv('DB_CONNEXION', default = None)
+        self.DBURL=os.getenv('POSTGRES_CONNECTION', default = None)
         self.engine = create_engine(self.DBURL)  
     @property
     def metadata(self):
@@ -180,7 +180,7 @@ class Database():
 
 
 def df_from_query(engine, table_name):
-    """Read DataFrames from query"""
+    """Create a DataFrame from a table name"""
     queries = {
         "dataset": "SELECT * FROM dataset",
         "image": "SELECT * FROM image",
@@ -190,11 +190,12 @@ def df_from_query(engine, table_name):
     
     try:
         if table_name in queries.keys():
-            df = pd.read_sql(queries.get(table_name), con=engine).drop(columns='id')
+            #df = pd.read_sql(queries.get(table_name), con=engine).drop(columns='id')
+            df = pd.read_sql(queries.get(table_name), con=engine,index_col='id')
             
         return df
     except:
-        print("Table doesn't exist in database!") 
+        raise f"Table {table_name} doesn't exist in database!"
 
 
 def df_to_db(df, db, table_name, id, operation):
@@ -350,6 +351,15 @@ def get_image_ids(images, datasets, slugs, bands, scale, init_date, end_date, no
                 ].copy()
         image_ids.append(df.index[0])
     return image_ids
+
+def split_featureCollections(geostore):
+    temp={"type": "FeatureCollection", 
+          "features": []}
+    train_atts = temp["features"]
+    valid_atts = temp["features"]
+    test_atts = temp["features"]
+
+    return [train_atts, valid_atts, test_atts] # geometry list
 
 def GeoJSONs_to_FeatureCollections(geostore):
     feature_collections = []

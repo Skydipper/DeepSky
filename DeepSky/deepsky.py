@@ -31,7 +31,7 @@ from tensorflow.python.tools import saved_model_utils
 from . import ee_collection_specifics
 
 from .utils import datasets, UploadExperiment, df_from_query, df_to_db, df_to_csv, polygons_to_geoStoreMultiPoligon, get_geojson_string,\
-    min_max_values, normalize_ee_images, get_image_ids, GeoJSONs_to_FeatureCollections, check_status_data,\
+    min_max_values, normalize_ee_images, get_image_ids, GeoJSONs_to_FeatureCollections, check_status_data, split_featureCollections,\
     removekey, Database
 
 class Trainer(object):
@@ -68,8 +68,7 @@ class Trainer(object):
         #self.datasets_api = Skydipper.Collection(search=' '.join(self.slugs_list), object_type=['dataset'], app=['skydipper'], limit=len(self.slugs_list))
     @property
     def slugs_list(self):
-        conn = Database()
-        return [row['slug'] for row in conn.Query('select slug from dataset')]
+        return self.datasets.slug.tolist()
 
 
     def get_token(self, email):
@@ -578,21 +577,66 @@ class Trainer(object):
             df_to_db(self.images, self.engine, "image")
             df_to_db(self.versions, self.engine, "model_versions")
     
-    def export_TFRecords_Dag(self, **kwargs):
+    def export_TFRecords_Dag(self, params:dict):
         """
-        Export TFRecords to GCS.
+        Export TFRecords to GCS adapted method to be executed with Airflow.
         Parameters
         ----------
-        sample_size: int
+        params: dict
             Number of samples to extract from each polygon.
-        kernel_size: int
-            An integer specifying the height and width of the 2D images.
+            example: {
+                "batch_size": "24",
+                "dataset_names": [ "Sentinel-2-Top-of-Atmosphere-Reflectance", "USDA-NASS-Cropland-Data-Layers"],
+                "end_date": "2016-12-31",
+                "epochs": "25",
+                "geostore": " {\n  \"type\": \"FeatureCollection\",\n  \"features\": [\n    {\n      \"type\": \"Feature\",\n      \"properties\": {},\n      \"geometry\": {\n        \"type\": \"MultiPolygon\",\n        \"coordinates\": [\n            [[[-81.298828125, 37.87485339352928],\n              [-79.9365234375, 37.87485339352928],\n              [-79.9365234375, 38.85682013474361],\n              [-81.298828125, 38.85682013474361],\n              [-81.298828125, 37.87485339352928]]],\n            [[[-120.65185546875, 41.590796851056005],\n              [-120.0146484375, 41.590796851056005],\n              [-120.0146484375, 42.22851735620852],\n              [-120.65185546875, 42.22851735620852],\n              [-120.65185546875, 41.590796851056005]]],\n            [[[-111.654052734375, 36.89719446989036],\n              [-110.90698242187499, 36.89719446989036],\n              [-110.90698242187499, 37.22158045838649],\n              [-111.654052734375, 37.22158045838649],\n              [-111.654052734375, 36.89719446989036]]]            \n          ]\n      }\n    }\n  ]\n}",
+                "init_date": "2016-01-01",
+                "input_bands": ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8A", "B8", "B11", "B12", "ndvi", "ndwi"],
+                "input_type": "Images",
+                "model_output": "segmentation",
+                "model_type": "CNN",
+                "norm_type": "global",
+                "output_bands": [ "cropland", "land", "water", "urban"]
+            }
         """
-        self.sample_size = sample_size
-        self.kernel_size = kernel_size
+        # TODO
+        # !Setng parameters; they should not be  self. as in dags the instantiate of each side can happen on different servers and they will not share objects but for now and as we dont have time to refactor we will keep this version
+        #Variable definitions
+        default_size ={
+            "Images":{"sample_size": 1000,
+                "kernel_size": 256},
+            "Vectors":{"sample_size": 20000,
+                "kernel_size": 1}
+        }
+        
+        attributes = split_featureCollections(params["geostore"])
+        self.geostore = polygons_to_geoStoreMultiPoligon(attributes)
+        self.slugs = params["dataset_names"]
+        self.bands = [params["input_bands"], params["output_bands"]]
+        self.scale = params["scale"]
+        self.norm_type = params["norm_type"]
+        self.init_date = params["init_date"]
+        self.end_date = params["end_date"]
+        self.sample_size = default_size[params["input_type"]]["sample_size"]
+        self.kernel_size = default_size[params["input_type"]]["kernel_size"]
         # Get image ids
         self.image_ids = get_image_ids(self.images, self.datasets, self.slugs,\
                                        self.bands, self.scale, self.init_date, self.end_date, self.norm_type)
+        self.norm_composites = []
+        for n, slug in enumerate(self.slugs):
+        
+            dataset_id = self.datasets[self.datasets['slug'] == slug].index[0]
+            value = json.loads(self.values[n])
+
+            # Create composite
+            image = ee_collection_specifics.Composite(slug)(self.init_date, self.end_date)
+
+            # Normalize images
+            if bool(value): 
+                image = normalize_ee_images(image, slug, value)
+
+            self.norm_composites.append(image)
+        
         # Convert the GeoJSON to feature collections
         feature_collections = GeoJSONs_to_FeatureCollections(self.geostore)
         
@@ -604,6 +648,7 @@ class Trainer(object):
 
         df = self.versions[['input_image_id', 'output_image_id', 'geostore_id', 'kernel_size', 'sample_size']\
                           ].isin([self.image_ids[0], self.image_ids[1], self.geostore_id, self.kernel_size, self.sample_size]).copy()
+        
         if not df.all(axis=1).any():
             task = self.start_TFRecords_task(feature_collections, feature_lists)
         elif not (self.versions[df.all(axis=1)]['data_status'] == 'COMPLETED').all():
@@ -1294,7 +1339,7 @@ class Predictor(object):
         self.version = version
         self.version_id = self.versions[self.versions['version'] == self.version].index[0]
         self.version_name = 'v'+ str(self.version)
-        self.training_params =json.loads(self.versions[self.versions['version'] == self.version]['training_params'][self.version_id])
+        self.training_params =self.versions[self.versions['version'] == self.version]['training_params'][self.version_id]
         self.image_ids = list(self.versions.iloc[self.version_id][['input_image_id', 'output_image_id']])
         self.collections = list(self.datasets.iloc[list(self.images.iloc[self.image_ids]['dataset_id'])]['slug'])
         self.bands = [self.training_params.get('in_bands'), self.training_params.get('out_bands')]
@@ -1322,19 +1367,20 @@ class Predictor(object):
         #self.polygon = Skydipper.Geometry(attributes=attributes) # This is here commented until SkyPy works again
         #self.geostore_id = self.polygon.id # This is here commented until SkyPy works again
         # Register geostore object on a server. Return the object, and instantiate a Geometry.
-        if self.token:
-            header= {
-                'Authorization': 'Bearer ' + self.token,
-                'Content-Type':'application/json'
-                    }
-            url = f'{os.getenv("API_URL")}/v1/geostore'
-            r = requests.post(url, headers=header, json=self.attributes)
-
-            self.polygon = r.json().get('data').get('attributes')
-            self.geostore_id = r.json().get('data').get('id')
-
-        else:
-            raise ValueError(f'Token is required use get_token() method first.')
+        #if self.token:
+        #    header= {
+        #        'Authorization': 'Bearer ' + self.token,
+        #        'Content-Type':'application/json'
+        #            }
+        #    url = f'{os.getenv("API_URL")}/v1/geostore'
+        #    r = requests.post(url, headers=header, json=self.attributes)
+#
+        #    self.polygon = r.json().get('data').get('attributes')
+        #    self.geostore_id = r.json().get('data').get('id')
+#
+        #else:
+        #    #raise ValueError(f'Token is required use get_token() method first.')
+        self.polygon = attributes
 
         # Returns a folium map with the polygons
         self.features = self.polygon['geojson']['features']
