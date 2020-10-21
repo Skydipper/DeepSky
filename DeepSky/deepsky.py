@@ -1425,12 +1425,12 @@ class Predictor(object):
             self.init_date = init_date
             self.end_date = end_date
         else:
-            self.init_date = self.init_date
-            self.end_date = self.end_date
+            self.init_date = self.init_date.strftime("%Y-%m-%d")
+            self.end_date = self.end_date.strftime("%Y-%m-%d")
 
         self.kernel_size = int(self.versions['kernel_size'].iloc[self.version_id])
         self.input_image_id = self.versions.iloc[self.version_id]['input_image_id']
-        values = json.loads(self.images.iloc[self.input_image_id]['bands_min_max'])
+        values = self.images.iloc[self.input_image_id]['bands_min_max']
         # Create input composite
         self.image = ee_collection_specifics.Composite(self.collections[0])(self.init_date, self.end_date)
         # Normalize images
