@@ -4,6 +4,7 @@ LICENSE
 
 # Git files
 .gitignore
+env.sample
 
 # Commands
 start.sh

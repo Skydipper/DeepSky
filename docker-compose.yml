@@ -1,6 +1,10 @@
 version: '3'
 services:
   deepsky:
+    env_file: 
+      - .env
     build: .
     ports:
       - 8888:8888
+    volumes: 
+      - .:/tf/deepsky
