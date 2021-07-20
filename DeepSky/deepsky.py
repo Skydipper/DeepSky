@@ -1,5 +1,5 @@
 import ee
-import Skydipper
+#import Skydipper-sdk as Skydipper
 import sqlalchemy
 import folium
 import json
@@ -44,10 +44,10 @@ class Trainer(object):
     """
     def __init__(self):
         #import env files & services auth
-        self.ee_tiles = 'https://earthengine.googleapis.com/map/{mapid}/{{z}}/{{x}}/{{y}}?token={token}'
+        self.ee_tiles = '{tile_fetcher.url_format}'
         self.private_key = json.loads(os.getenv("EE_PRIVATE_KEY"))
         self.credentials = service_account.Credentials(self.private_key, self.private_key['client_email'], self.private_key['token_uri'])
-        self.ee_credentials = ee.ServiceAccountCredentials(email='', key_data=os.getenv("EE_PRIVATE_KEY"))
+        self.ee_credentials = ee.ServiceAccountCredentials(email=self.private_key['client_email'], key_data=os.getenv("EE_PRIVATE_KEY"))
         self.ml = discovery.build('ml', 'v1', credentials = self.credentials)
         self.storage_client = storage.Client(credentials=self.credentials, project=self.private_key['project_id'])
         self.bucket = os.getenv("GCSBUCKET")
@@ -62,7 +62,7 @@ class Trainer(object):
         self.style_functions = [lambda x: {'fillOpacity': 0.0, 'weight': 4, 'color': color} for color in self.colors]
 
         
-        ee.Initialize(credentials=self.ee_credentials, use_cloud_api=False)
+        ee.Initialize(credentials=self.ee_credentials)
 
         # TODO
         #self.datasets_api = Skydipper.Collection(search=' '.join(self.slugs_list), object_type=['dataset'], app=['skydipper'], limit=len(self.slugs_list))
@@ -166,19 +166,20 @@ class Trainer(object):
         #self.multipolygon = Skydipper.Geometry(attributes=geostore) # This is here commented until SkyPy works again
         #self.geostore_id = multipolygon.id # This is here commented until SkyPy works again
         # Register geostore object on a server. Return the object, and instantiate a Geometry.
-        if self.token:
-            header= {
-                'Authorization': 'Bearer ' + self.token,
-                'Content-Type':'application/json'
-                    }
-            url = f'{os.getenv("API_URL")}/v1/geostore'
-            r = requests.post(url, headers=header, json=self.geostore)
+        #if self.token:
+        header= {
+            # 'Authorization': 'Bearer ' + self.token,
+            'Content-Type':'application/json'
+                }
+        url = f'{os.getenv("API_URL")}/v1/geostore'
+        r = requests.post(url, headers=header, json=self.geostore)
+        logging.debug(f'[geostore]: {r.text}')
 
-            self.multipolygon = r.json().get('data').get('attributes')
-            self.geostore_id = r.json().get('data').get('id')
+        self.multipolygon = r.json().get('data').get('attributes')
+        self.geostore_id = r.json().get('data').get('id')
 
-        else:
-            raise ValueError(f'Token is required use get_token() method first.')
+        # else:
+        #     raise ValueError(f'Token is required use get_token() method first.')
 
         # Returns a folium map with the polygons
         #features = self.multipolygon.attributes['geojson']['features']

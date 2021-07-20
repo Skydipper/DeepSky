@@ -6,7 +6,7 @@ set -e
 case "$1" in
     gpu)
         echo "Running container with GPUs"
-        docker build --rm -f Dockerfile -t vizzuality/mlnotebooks . && docker run -u $(id -u):$(id -g) --env-file=.env -v $MYPATH:/tf/deepsky  --rm -p $2:8888 --gpus all -it --name mlnotebooks vizzuality/mlnotebooks
+        docker-compose up --build
         ;;
     cpu)
         echo "Running container with CPU"
