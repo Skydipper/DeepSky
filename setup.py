@@ -50,7 +50,7 @@ setuptools.setup(
         'Keras-Preprocessing==1.1.0',
         'oauth2client==4.1.3',
         'pandas==1.0.0',
-        'protobuf==3.12.0',
+        'protobuf==3.15.0',
         'SQLAlchemy==1.3.13',
         'psycopg2==2.8.4',
         'qtconsole==4.6.0',
