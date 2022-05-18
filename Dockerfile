@@ -1,4 +1,4 @@
-FROM tensorflow/tensorflow:latest-gpu-py3-jupyter
+FROM tensorflow/tensorflow:latest-gpu-jupyter
 
 #Source image: https://github.com/tensorflow/tensorflow/blob/master/tensorflow/tools/dockerfiles/dockerfiles/gpu-jupyter.Dockerfile
 
