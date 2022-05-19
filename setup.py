@@ -1,5 +1,6 @@
 import os
 import re
+
 import setuptools
 
 envstring = lambda var: os.environ.get(var) or ""
@@ -49,17 +50,17 @@ setuptools.setup(
         'Keras-Applications==1.0.8',
         'Keras-Preprocessing==1.1.0',
         'oauth2client==4.1.3',
-        'pandas==1.0.0',
-        'protobuf==3.12.0',
+        'pandas>=1.0.0',
+        # 'protobuf==3.12.0',
         'SQLAlchemy==1.3.13',
         'psycopg2==2.8.4',
         'qtconsole==4.6.0',
         'requests==2.22.0',
-        'scikit-learn==0.21.3',
+        # 'scikit-learn==0.21.3',
         'Skydipper-sdk==1.0.0',
-        'tensorboard==2.1.1',
-        'tensorflow==2.1.0',
-        'tensorflow-estimator==2.1.0',
+        # 'tensorboard>=2.1',
+        # 'tensorflow>=2.1',
+        # 'tensorflow-estimator==2.1.0',
         'python-dotenv==0.18.0'
     ],
     classifiers=[
