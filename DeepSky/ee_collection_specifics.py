@@ -5,6 +5,7 @@ Information on Earth Engine collections stored here (e.g. bands, collection ids,
 
 import ee
 
+
 def ee_collections(collection):
     """
     Earth Engine image collection names

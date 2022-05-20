@@ -1,15 +1,16 @@
 """Trains a Keras model"""
 
-import os
-import json
 import argparse
+import json
+import os
 
 import tensorflow as tf
 from google.cloud import storage
 from google.cloud.storage import blob
 
-from .util import Util
 from . import model
+from .util import Util
+
 
 def get_args():
     """Argument parser.

@@ -1,19 +1,23 @@
+import json
+import logging
+import os
+from argparse import Namespace
+
+import ee
+import grpc
 import numpy as np
 import pandas as pd
-from sqlalchemy import Column, Integer, BigInteger, Float, Text, String, Boolean, DateTime, create_engine, MetaData
-from sqlalchemy.dialects.postgresql import JSON
-import json
 import tensorflow as tf
-import ee
-import os
-import logging
-
-from argparse import Namespace
-import grpc
-from tensorboard.uploader import auth, server_info as server_info_lib, uploader as uploader_lib
-from tensorboard.uploader.uploader_main import _UploadIntent, _get_intent, _get_server_info
+from sqlalchemy import (BigInteger, Boolean, Column, DateTime, Float, Integer,
+                        MetaData, String, Text, create_engine)
+from sqlalchemy.dialects.postgresql import JSON
+from tensorboard.uploader import auth
+from tensorboard.uploader import server_info as server_info_lib
+from tensorboard.uploader import uploader as uploader_lib
 from tensorboard.uploader.proto import write_service_pb2_grpc
 from tensorboard.uploader.server_info import allowed_plugins
+from tensorboard.uploader.uploader_main import (_get_intent, _get_server_info,
+                                                _UploadIntent)
 
 from . import ee_collection_specifics
 

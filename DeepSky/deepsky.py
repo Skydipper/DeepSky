@@ -1,38 +1,41 @@
-import ee
-#import Skydipper-sdk as Skydipper
-import sqlalchemy
-import folium
+import argparse
+import getpass
 import json
-import os
 import logging
-import time
+import os
 import shutil
+import time
+from argparse import Namespace
+from pathlib import Path
+
+import ee
+import folium
 import pandas as pd
 import requests
-import getpass
-import argparse
-from dotenv import load_dotenv
-from pathlib import Path
+#import Skydipper-sdk as Skydipper
+import sqlalchemy
 import tensorflow as tf
-from tensorboard import program
-from IPython.display import IFrame
-from argparse import Namespace
-from ee.cli.utils import CommandLineConfig
+from dotenv import load_dotenv
 from ee.cli.commands import PrepareModelCommand
-from shapely.geometry import shape
+from ee.cli.utils import CommandLineConfig
 from google.cloud import storage
 from google.cloud.storage import blob
-from googleapiclient import discovery
-from googleapiclient import errors
 from google.oauth2 import service_account
+from googleapiclient import discovery, errors
+from IPython.display import IFrame
 from oauth2client.client import GoogleCredentials
+from shapely.geometry import shape
+from tensorboard import program
 from tensorflow.python.tools import saved_model_utils
 
 from . import ee_collection_specifics
+from .utils import (Database, GeoJSONs_to_FeatureCollections, UploadExperiment,
+                    check_status_data, datasets, df_from_query, df_to_csv,
+                    df_to_db, get_geojson_string, get_image_ids,
+                    min_max_values, normalize_ee_images,
+                    polygons_to_geoStoreMultiPoligon, removekey,
+                    split_featureCollections)
 
-from .utils import datasets, UploadExperiment, df_from_query, df_to_db, df_to_csv, polygons_to_geoStoreMultiPoligon, get_geojson_string,\
-    min_max_values, normalize_ee_images, get_image_ids, GeoJSONs_to_FeatureCollections, check_status_data, split_featureCollections,\
-    removekey, Database
 
 class Trainer(object):
     """

@@ -1,9 +1,11 @@
 """Utilities to download and preprocess the data."""
 
-import tensorflow as tf
 import json
+
+import tensorflow as tf
 from google.cloud import storage
 from google.cloud.storage import blob
+
 
 class Util():
 
