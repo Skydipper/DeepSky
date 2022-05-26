@@ -58,7 +58,7 @@ setuptools.setup(
         'scikit-learn==0.21.3',
         'Skydipper-sdk==1.0.0',
         'tensorboard==2.1.1',
-        'tensorflow==2.1.0',
+        'tensorflow==2.7.2',
         'tensorflow-estimator==2.1.0',
         'python-dotenv==0.18.0'
     ],
