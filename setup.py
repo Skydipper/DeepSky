@@ -54,7 +54,7 @@ setuptools.setup(
         'SQLAlchemy==1.3.13',
         'psycopg2==2.8.4',
         'qtconsole==4.6.0',
-        'requests==2.22.0',
+        'requests==2.31.0',
         'scikit-learn==0.21.3',
         'Skydipper-sdk==1.0.0',
         'tensorboard==2.1.1',
